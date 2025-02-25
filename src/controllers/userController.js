@@ -1,5 +1,5 @@
 import User from "../models/userModel.js";
-import bcrypt from "bcrypt";
+import argon2 from "argon2";
 import jwt from "jsonwebtoken";
 import { config } from "dotenv";
 import Redis from "ioredis";
@@ -54,7 +54,7 @@ export const userSignupDetails = async (req, res) => {
     }
 
     //hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await argon2.hash(password);
 
     const newUser = new User({
       name,
@@ -79,7 +79,7 @@ export const userLoginDetails = async (req, res) => {
 
     // Find user and validate password
     const user = await User.findOne({ email });
-    const isMatch = user && (await bcrypt.compare(password, user.password));
+    const isMatch = await argon2.verify(user.password, password);
     if (!isMatch) {
       return res.status(400).json({ msg: "Invalid email or password" });
     }
