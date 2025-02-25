@@ -4,7 +4,7 @@ import redisClient from "../utils/redisClient.js";
 
 const limiter = rateLimit({
   store: new RedisStore({
-    sendCommand: (...args) => redisClient.call(...args), // Use Redis for storing limits
+    sendCommand: (...args) => redisClient.sendCommand(args), // ✅ FIXED
   }),
   windowMs: 60 * 1000, // 1 minute window
   max: 10, // Limit each IP to 10 requests per `windowMs`
