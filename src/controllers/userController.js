@@ -8,7 +8,8 @@ config();
 
 const typeEnum = ["admin", "user"];
 
-const redis = new Redis();
+
+const redis = new Redis(process.env.REDIS_URL);
 
 const valid = (email) => {
   const pattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
