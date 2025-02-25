@@ -6,7 +6,8 @@ import Redis from "ioredis";
 config(); // Load environment variables
 
 
-const redis = new Redis();
+const redis = new Redis(process.env.REDIS_URL);
+
 
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
