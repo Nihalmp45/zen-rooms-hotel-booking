@@ -37,8 +37,8 @@ app.use(
 
 app.use(limiter);
 app.use(cors({
-  origin: ["http://localhost:5173", "https://zen-room.vercel.app"],
-  credentials: true,  // ✅ Required for cookies/sessions
+  origin: true, // ✅ Allows all origins
+  credentials: true, // ✅ Required for cookies/sessions
 }));
 
 // ✅ Hello World Route for Testing
