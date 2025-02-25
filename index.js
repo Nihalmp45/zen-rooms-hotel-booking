@@ -42,6 +42,10 @@ app.use(cors({
   credentials: true,  // ✅ Allow cookies & authentication headers
 }));
 
+// ✅ Hello World Route for Testing
+app.get("/", (req, res) => {
+  res.json({ message: "Hello World! Your API is running 🚀" });
+});
 
 app.use("/api",propertyView)
 app.use('/api',userView)
