@@ -1,13 +1,14 @@
 import User from "../models/userModel.js";
 import bcrypt from "bcrypt";
-import jwt from 'jsonwebtoken'
-import {config} from 'dotenv'
+import jwt from "jsonwebtoken";
+import { config } from "dotenv";
+import Redis from "ioredis";
 
-config()
+config();
 
 const typeEnum = ["admin", "user"];
 
-
+const redis = new Redis();
 
 const valid = (email) => {
   const pattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -73,72 +74,83 @@ export const userSignupDetails = async (req, res) => {
 };
 
 export const userLoginDetails = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Find user and validate password
+    const user = await User.findOne({ email });
+    const isMatch = user && (await bcrypt.compare(password, user.password));
+    if (!isMatch) {
+      return res.status(400).json({ msg: "Invalid email or password" });
+    }
+
+    // Prepare token data
+    const tokenData = {
+      id: user._id,
+      username: user.name,
+      email: user.email,
+    };
+
+    // Generate token
+    let token;
     try {
-      const { email, password } = req.body;
-  
-      // Find user and validate password
-      const user = await User.findOne({ email });
-      const isMatch = user && (await bcrypt.compare(password, user.password));
-      if (!isMatch) {
-        return res.status(400).json({ msg: "Invalid email or password" });
-      }
-  
-      // Prepare token data
-      const tokenData = {
-        id: user._id,
-        username: user.name,
-        email: user.email,
-      };
-  
-      // Generate token
-      let token;
-      try {
-        token = jwt.sign({ tokenData }, process.env.SECRET_KEY, { expiresIn: "1h" });
-      } catch (error) {
-        console.error("Error generating token:", error.message);
-        return res.status(500).json({ msg: "Error generating token" });
-      }
-  
-      // Set HttpOnly cookie
-      res.cookie("token", token, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "Strict",
-        maxAge: 3600000, // 1 hour
-      });
-  
-      // Send response
-      res.status(200).json({
-        success: true,
-        data: tokenData,
-        message: "Login successful",
+      token = jwt.sign({ tokenData }, process.env.SECRET_KEY, {
+        expiresIn: "1h",
       });
     } catch (error) {
-      console.error(error);
-      res.status(500).json({ msg: "Server error" });
+      console.error("Error generating token:", error.message);
+      return res.status(500).json({ msg: "Error generating token" });
     }
-  };
 
+    await redis.setex(`auth:${user._id}`, 3600, JSON.stringify(tokenData));
 
+    // Set HttpOnly cookie
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "Strict",
+      maxAge: 3600000, // 1 hour
+    });
 
-export const checkAuth = (req, res) => {
+    // Send response
+    res.status(200).json({
+      success: true,
+      data: tokenData,
+      message: "Login successful",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ msg: "Server error" });
+  }
+};
+
+export const checkAuth = async (req, res) => {
   try {
     const token = req.cookies.token;
     if (!token) return res.status(401).json({ msg: "Not authenticated" });
 
-    jwt.verify(token, process.env.SECRET_KEY, (err, decoded) => {
+    // Check Redis cache first
+    const cachedUser = await redis.get(`auth:${token}`);
+    if (cachedUser) {
+      return res
+        .status(200)
+        .json({ success: true, user: JSON.parse(cachedUser) });
+    }
+
+    jwt.verify(token, process.env.SECRET_KEY,async (err, decoded) => {
       if (err) return res.status(401).json({ msg: "Invalid token" });
+
+  // Cache the user for future requests
+  await redis.setex(`auth:${decoded.id}`, 3600, JSON.stringify(decoded));
+
       res.status(200).json({ success: true, user: decoded.tokenData });
     });
   } catch (error) {
     res.status(500).json({ msg: "Server error" });
   }
 };
-  
-  
-  export const logoutDetails = (req,res)=>{
-    res.clearCookie("token",{httpOnly:true});
-    res.status(200).json({success:true,message:"Logged out successfully"})
 
-  }
-  
+export const logoutDetails = (req, res) => {
+  res.clearCookie("token", { httpOnly: true });
+  res.status(200).json({ success: true, message: "Logged out successfully" });
+};

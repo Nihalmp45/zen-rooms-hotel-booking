@@ -7,6 +7,8 @@ import connectToDB from './src/dbConfig/dbConfig.js';
 import propertyView from './src/views/propertyViews.js'
 import userView from './src/views/userViews.js'
 import cookieParser from "cookie-parser";
+import limiter from "./src/middleware/rateLimiter.js";
+
 
 const app = express()
 const port = process.env.PORT || 3000
@@ -33,10 +35,13 @@ app.use(
   })
 );
 
+app.use(limiter);
+
 app.use(cors({
   origin: "http://localhost:5173",  // ✅ Allow only your frontend
   credentials: true,  // ✅ Allow cookies & authentication headers
 }));
+
 
 app.use("/api",propertyView)
 app.use('/api',userView)

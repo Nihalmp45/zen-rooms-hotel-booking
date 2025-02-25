@@ -1,10 +1,14 @@
 import axios from "axios";
 import { config } from "dotenv";
 import Stripe from "stripe";
+import Redis from "ioredis"; 
 
 config(); // Load environment variables
 
-const stripe = Stripe(process.env.STRIPE_KEY);
+
+const redis = new Redis();
+
+const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
 export const getProperties = async (req, res) => {
   try {
@@ -24,6 +28,15 @@ export const getProperties = async (req, res) => {
         .json({
           error: "Query, arrival_date, and departure_date are required.",
         });
+    }
+
+    const cacheKey = `properties:${query}:${arrival_date}:${departure_date}:${adults}:${children_age}:${room_qty}`;
+    
+    // Check if data is cached
+    const cachedData = await redis.get(cacheKey);
+    if (cachedData) {
+      console.log("Serving from cache");
+      return res.status(200).json(JSON.parse(cachedData));
     }
 
     // First API call: Search destination to get dest_id
@@ -75,6 +88,9 @@ export const getProperties = async (req, res) => {
 
     const hotelsResponse = await axios.request(hotelsOptions);
 
+    // Cache the response for 1 hour (3600 seconds)
+    await redis.setex(cacheKey, 3600, JSON.stringify(hotelsResponse.data));
+
     // Return the final data (hotels) from the second API call
     return res.status(200).json(hotelsResponse.data);
   } catch (error) {
@@ -100,6 +116,14 @@ export const getHotelDetails = async (req, res) => {
         });
     }
 
+    const cacheKey = `hotelDetails:${hotel_id}:${arrival_date}:${departure_date}`;
+    const cachedData = await redis.get(cacheKey);
+
+    if (cachedData) {
+      console.log("Serving from cache:", cacheKey);
+      return res.status(200).json(JSON.parse(cachedData));
+    }
+
     const hotelDetailsOptions = {
       method: "GET",
       url: "https://booking-com15.p.rapidapi.com/api/v1/hotels/getHotelDetails",
@@ -115,6 +139,9 @@ export const getHotelDetails = async (req, res) => {
     };
 
     const hotelDetailsResponse = await axios.request(hotelDetailsOptions);
+
+    await redis.set(cacheKey, JSON.stringify(hotelDetailsResponse.data), "EX", 3600);
+
     return res.status(200).json(hotelDetailsResponse.data);
   } catch (error) {
     console.error("Error fetching hotel details:", error.message);
@@ -132,6 +159,14 @@ export const getHotelPhotos = async (req, res) => {
       return res.status(400).json({ error: "hotel_id is required." });
     }
 
+    const cacheKey = `hotelPhotos:${hotel_id}`;
+    const cachedData = await redis.get(cacheKey);
+
+    if (cachedData) {
+      console.log("Serving from cache:", cacheKey);
+      return res.status(200).json(JSON.parse(cachedData));
+    }
+
     const hotelPhotosOptions = {
       method: "GET",
       url: "https://booking-com15.p.rapidapi.com/api/v1/hotels/getHotelPhotos",
@@ -142,7 +177,13 @@ export const getHotelPhotos = async (req, res) => {
       },
     };
 
+ 
+
+
     const hotelPhotosResponse = await axios.request(hotelPhotosOptions);
+
+    await redis.set(cacheKey, JSON.stringify(hotelPhotosResponse.data), "EX", 3600);
+
     return res.status(200).json(hotelPhotosResponse.data);
   } catch (error) {
     console.error("Error fetching hotel photos:", error.message);
@@ -171,6 +212,15 @@ export const stripePayment = async (req, res) => {
   console.log("Final price in paise:", price);
 
   try {
+
+    const cacheKey = `stripeSession:${hotel_name}:${price}`;
+    const cachedSession = await redis.get(cacheKey);
+
+    if (cachedSession) {
+      console.log("Serving Stripe session from cache:", cacheKey);
+      return res.status(200).json({ url: JSON.parse(cachedSession) });
+    }
+
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       line_items: [
@@ -188,7 +238,9 @@ export const stripePayment = async (req, res) => {
       cancel_url: "http://localhost:5173/cancel",
     });
 
-    res.json({ url: session.url });
+    await redis.set(cacheKey, JSON.stringify(session.url), "EX", 600);
+
+    res.status(200).json({ url: session.url });
   } catch (error) {
     console.error("Stripe error:", error); // Logs full Stripe error
     res.status(500).json({ error: error.message }); // Send error message to frontend
