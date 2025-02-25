@@ -37,10 +37,7 @@ app.use(
 
 app.use(limiter);
 
-app.use(cors({
-  origin: "http://localhost:5173",  // ✅ Allow only your frontend
-  credentials: true,  // ✅ Allow cookies & authentication headers
-}));
+app.use(cors());
 
 // ✅ Hello World Route for Testing
 app.get("/", (req, res) => {
